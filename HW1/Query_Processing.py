@@ -1,100 +1,109 @@
 from __future__ import division
 from elasticsearch import Elasticsearch
-import re
 from elasticsearch_dsl import Search
-from collections import defaultdict
-from string import digits
+import re
 import string
-import dill
 
-es = Elasticsearch()
+# -----------------------------
+# CONNECT TO ELASTICSEARCH
+# -----------------------------
+es = Elasticsearch(
+    "https://localhost:9200",
+    basic_auth=("elastic", "sY2SDX2lMkbFBKUEFQWh"),
+    verify_certs=False,
+    request_timeout=120
+)
 
-s = Search().using(es).query("match_all")
-s.aggs.bucket("avg_size", "avg", field="doc_len")
-s.aggs.bucket("vocabSize", "cardinality", field="text")
-res = s.execute()
-D = 84678
-total_TF = []
+INDEX_NAME = "cacm"
 
 
-def getTermVector(keyword, a, key):
-    tf = a[keyword]["term_freq"]
-    docLen = len(a.keys())
-    total_TF.append([key.lower(), a[keyword]["ttf"]])
-    return tf, docLen
+# -----------------------------
+# STOPWORD REMOVAL
+# -----------------------------
+def load_stopwords():
+    with open(r"C:\Information-Retrieval\hw1\cacm_dataSet\common_words", "r") as f:
+        return f.read().splitlines()
+
+
+stopWords = load_stopwords()
 
 
 def queryProcessor(query):
-    with open("/Users/Zion/Downloads/AP_DATA/stoplist.txt") as sfile:
-        stopWords = sfile.readlines()
-    stopWords = filter(None, stopWords)
-    keywords = ""
-    flag = 0
-    for word in query.split():
-        for sWord in stopWords:
-            if (word == sWord.strip()):
-                flag = 1
-                break
-        if (flag != 1):
-            keywords += word + " "
-        flag = 0
-    keywords = keywords.translate(None, string.punctuation)
-    return keywords.strip()
+    query = query.lower()
+    query = query.translate(str.maketrans("", "", string.punctuation))
+
+    words = query.split()
+    cleaned = []
+
+    for w in words:
+        if w not in stopWords:
+            cleaned.append(w)
+
+    return cleaned
 
 
-def getDocInfo(key, docFreq):
-    s = Search().using(es).query("match", text=key)
-    docInfo = [h.meta.id for h in s.scan()]
-    docFreq.append([key.lower(), len(docInfo)])
-    return docInfo, docFreq
+# -----------------------------
+# SEARCH FUNCTION (BM25 / ES built-in)
+# -----------------------------
+def search_query(query, qid):
+    cleaned_query = queryProcessor(query)
+
+    final_query = " ".join(cleaned_query)
+
+    s = Search(using=es, index=INDEX_NAME).query("match", text=final_query)
+
+    response = s[:100].execute()
+
+    results = []
+
+    rank = 1
+    for hit in response:
+        docno = hit.meta.id
+        score = hit.meta.score
+
+        results.append(f"{qid} Q0 {docno} {rank} {score} Exp")
+        rank += 1
+
+    return results
 
 
-def getParameters(query, qNo):
-    docFreq = []
-    keywords = queryProcessor(query)
-    termVector = defaultdict(lambda: defaultdict(list))
-    for key in keywords.split():
-        docInfo, docFreq = getDocInfo(key, docFreq)
-        print docFreq
-        for docid in docInfo:
-            stemKey = es.indices.analyze(index='index1', analyzer='my_english', text=key)
-            a = es.termvectors(index="index1", doc_type="document", id=docid, term_statistics=True)["term_vectors"] \
-                ["text"]["terms"]
-
-            tf, docLen = getTermVector(stemKey["tokens"][0]["token"], a, key)
-            termVector[docid][key.lower()].append(tf)
-            termVector[docid][key.lower()].append(docLen)
-    f = open('Pickles/docFreq%s.p' % qNo, 'wb')
-    dill.dump(docFreq, f)
-    f.close()
-    f = open('Pickles/termVector%s.p' % qNo, 'wb')
-    dill.dump(termVector, f)
-    f.close()
-    return termVector
-
-
-def queryMaker():
-    f = open('Files/QueryUpdated.txt', 'r')
+# -----------------------------
+# READ QUERIES FILE
+# -----------------------------
+def load_queries():
     queries = []
-    for line in f:
-        queries.append(re.sub('\s+', ' ', line).strip().translate(None, digits))
+
+    with open(r"C:\Information-Retrieval\hw1\cacm_dataSet\query.text", "r") as f:
+        for line in f:
+            line = re.sub(r"\s+", " ", line).strip()
+            if line:
+                queries.append(line)
+
     return queries
 
 
-queries = queryMaker()
-qNo = 0
-for query in queries:
-    qNo += 1
-    termVector = getParameters(query, qNo)
-    print("Created %d termVector" % qNo)
+# -----------------------------
+# MAIN EXECUTION
+# -----------------------------
+queries = load_queries()
 
-unique_TTF = []
-for item in total_TF:
-    if sorted(item) not in unique_TTF:
-        unique_TTF.append(sorted(item))
+all_results = []
 
-print(unique_TTF)
-f = open('Pickles/totalTF.p', 'wb')
-dill.dump(unique_TTF, f)
-f.close()
+qid = 1
+for q in queries:
+    print("Processing Query:", qid)
 
+    results = search_query(q, qid)
+    all_results.extend(results)
+
+    qid += 1
+
+
+# -----------------------------
+# SAVE OUTPUT FILE
+# -----------------------------
+with open("results_bm25.txt", "w") as f:
+    for line in all_results:
+        f.write(line + "\n")
+
+print("\nDONE: results_bm25.txt created")
