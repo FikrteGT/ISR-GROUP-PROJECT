@@ -1,51 +1,90 @@
 import time
 from elasticsearch import Elasticsearch
-from bs4 import BeautifulSoup
 import os
 import re
-from collections import Counter
-import dill
 
-es = Elasticsearch()
-path = "/Users/Zion/Downloads/AP_DATA/ap89_collection/"
+# -----------------------------
+# 1. Connect to Elasticsearch
+# -----------------------------
+es = Elasticsearch(
+    "https://localhost:9200",
+    basic_auth=("elastic", "sY2SDX2lMkbFBKUEFQWh"),
+    verify_certs=False,
+    request_timeout=120,     # wait up to 120 seconds
+    max_retries=5,
+    retry_on_timeout=True
+)
+
+# -----------------------------
+# 2. Path to CACM dataset
+# -----------------------------
+# Folder contains ONE file: cacm.all
+path = r"C:\Information-Retrieval\hw1\cacm_dataSet"
+file_path = os.path.join(path, "cacm.all")
+
+# -----------------------------
+# 3. Start timing
+# -----------------------------
 start_time = time.time()
-i = 0
-for filename in os.listdir(path):
-    #if (filename == 'ap890130'):
-    if(filename != 'readme'):
-        file = open(path+filename)
-        page = file.read()
-        #docNo = []
-        validPage = "<root>" + page + "</root>"
-        soup = BeautifulSoup(validPage, 'xml')
-        docs = soup.find_all('DOC')
-        for doc in docs:
 
-            i+=1
-            texts = doc.find_all('TEXT')
+doc_count = 0
+
+# -----------------------------
+# 4. Open CACM file
+# -----------------------------
+with open(file_path, "r", encoding="utf-8", errors="ignore") as file:
+
+    docno = None
+    text = ""
+
+    for line in file:
+        line = line.strip()
+
+        # New document starts
+        if line.startswith(".I"):
+            # Index previous document
+            if docno is not None:
+                es.index(
+                    index="cacm",
+                    id=docno,
+                    document={"text": text}
+                )
+                print("Indexed:", docno)
+                doc_count += 1
+
+            # Get new document ID
+            docno = line.split()[1]
             text = ""
-            for txt in texts:
-                text += txt.get_text()
-            count = 0
-            for line in text.splitlines():
-                word = re.sub('\s+', ' ', line).strip().split(' ')
-                count += len(word)
-            jsonDoc = {
-                    'text': text
-            }
-            #docNo.append(doc.DOCNO.get_text().strip())
-            res = es.index(index="index1", doc_type='document', id=doc.DOCNO.get_text().strip(), body=jsonDoc)
-            print("Indexed %d document" % i)
-# f = open("Pickles/docIDs.txt", "wb")
-# dill.dump(docNo, f)
-# f.close()
 
-temp = time.time()-start_time
-print(temp)
-hours = temp//3600
-temp = temp - 3600*hours
-minutes = temp//60
-seconds = temp - 60*minutes
-print('%d:%d:%d' %(hours,minutes,seconds))
+        # Start of main text section
+        elif line.startswith(".W"):
+            continue
 
+        # Ignore other CACM tags (.T, .A, .B, etc.)
+        elif line.startswith("."):
+            continue
 
+        # Actual document text
+        else:
+            text += " " + line
+
+    # Index the last document
+    if docno is not None:
+        es.index(
+            index="cacm",
+            id=docno,
+            document={"text": text}
+        )
+        print("Indexed:", docno)
+        doc_count += 1
+        time.sleep(0.001)   # 1 millisecond pause
+# -----------------------------
+# 5. Time statistics
+# -----------------------------
+elapsed = time.time() - start_time
+hours = elapsed // 3600
+minutes = (elapsed % 3600) // 60
+seconds = elapsed % 60
+
+print("\nTotal documents indexed:", doc_count)
+print("Time taken: %d:%d:%d" % (hours, minutes, seconds))
