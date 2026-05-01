@@ -1,66 +1,91 @@
-from collections import OrderedDict
 from elasticsearch import Elasticsearch
 from elasticsearch_dsl import Search
 
-relevanceJudgements = {}
-queries = [('Causes of world war 2', '151801'),
-           ('Battles won by USA in World War 2', '151802'),
-           ('Battle of Stalingrad', '151803')]
+es = Elasticsearch(
+    "https://localhost:9200",
+    # update this if you chose a different password
+    basic_auth=("elastic", "sY2SDX2lMkbFBKUEFQWh"),
+    verify_certs=False,
+    request_timeout=120
+)
 
-def parseRawQrel():
-    i = 0
-    n = 1
-    with open('qrels-raw.txt', 'r') as f:
-        for relevanceJudgement in f:
-            if(i >= n):
-                cols = relevanceJudgement.split('\t')
-                queryID = cols[0]
-                documentID = cols[2]
-                if(len(cols)) > 5:
-                    score = int(cols[3]) + int(cols[4]) + int(cols[5])
-                else:
-                    score = int(cols[3]) + int(cols[4])
-                qArr = []
-                qArr.append(queryID)
-                qArr.append(documentID)
-                if score in relevanceJudgements:
-                    relevanceJudgements[score].append(qArr)
-                else:
-                    relevanceJudgements[score] = [qArr]
-            i += 1
-    f.close()
+QRELS_INPUT = r'C:\Information-Retrieval\HW1\cacm_dataSet\qrels.text'
+QUERY_INPUT = r'C:\Information-Retrieval\HW1\cacm_dataSet\query.text'
+QRELS_OUTPUT = r'C:\Information-Retrieval\HW5\qrels.txt'
+RANKLIST_OUTPUT = r'C:\Information-Retrieval\HW5\rankList.txt'
 
 
 def createQrel():
-    rJudge = OrderedDict(sorted(relevanceJudgements.items(), key=lambda t: t[0], reverse=True))
-    with open('qrels.txt', 'w') as f:
-        for score in rJudge:
-            for ids in rJudge[score]:
-                if score > 0:
-                    s = '1'
-                else:
-                    s = str(score)
-                line = ids[0] + " 0 " + ids[1] + " " + s + "\n"
-                f.write(line)
-    f.close()
+    """
+    Reads CACM qrels.text and writes a clean qrels.txt.
+    CACM format per line:  queryID  docID  0  0
+    All listed documents are considered relevant, so we write relevance = 1.
+    Output format:  queryID 0 docID 1
+    """
+    with open(QRELS_INPUT, 'r') as fin, open(QRELS_OUTPUT, 'w') as fout:
+        for line in fin:
+            cols = line.split()
+            if len(cols) >= 2:
+                queryID = cols[0]
+                docID = cols[1]
+                fout.write(f"{queryID} 0 {docID} 1\n")
+    print("qrels.txt created successfully.")
 
-def createRankList(query, id):
-    es = Elasticsearch()
-    s = Search().using(es).query("match", text=query)
+
+def load_queries():
+    """
+    Reads CACM query.text and returns list of (queryText, queryID) tuples.
+    CACM query format uses .I for ID and .W for the start of query text.
+    """
+    queries = []
+    qid, text, in_w = None, '', False
+    with open(QUERY_INPUT, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith('.I'):
+                if qid is not None and text.strip():
+                    queries.append((text.strip(), str(qid)))
+                qid = int(line.split()[1])
+                text, in_w = '', False
+            elif line.startswith('.W'):
+                in_w = True
+            elif line.startswith('.'):
+                in_w = False
+            elif in_w:
+                text += ' ' + line
+        if qid is not None and text.strip():
+            queries.append((text.strip(), str(qid)))
+    print(f"Loaded {len(queries)} queries from query.text.")
+    return queries
+
+
+def createRankList(query, qid):
+    """
+    Runs a query against the 'cacm' Elasticsearch index.
+    Saves top 1000 results to rankList.txt in TREC format:
+    queryID Q0 docID rank score Exp
+    """
+    s = Search(using=es, index="cacm").query("match", text=query)
     res = s[0:1000].execute()
-    docInfo = [(h.meta.id, h.meta.score) for h in res.hits]
-    i = 0
-    with open('rankList.txt', 'a+') as f:
-        for di in docInfo:
-            i+=1
-            line = id + " Q0 " + di[0] + " " + str(i) + " " + str(di[1]) + " " + "Exp\n"
-            f.write(line)
-    f.close()
+    with open(RANKLIST_OUTPUT, 'a') as f:
+        for i, hit in enumerate(res.hits, 1):
+            f.write(f"{qid} Q0 {hit.meta.id} {i} {hit.meta.score} Exp\n")
+
 
 def main():
-    parseRawQrel()
+    # Step 1: Convert CACM qrels.text -> qrels.txt
     createQrel()
-    for query in queries:
-        createRankList(query[0], query[1])
+
+    # Step 2: Clear rankList.txt before writing fresh results
+    open(RANKLIST_OUTPUT, 'w').close()
+
+    # Step 3: Load all 64 CACM queries and run them against Elasticsearch
+    queries = load_queries()
+    for query_text, qid in queries:
+        print(f"Running query {qid}...")
+        createRankList(query_text, qid)
+
+    print("rankList.txt created successfully.")
+
 
 main()
