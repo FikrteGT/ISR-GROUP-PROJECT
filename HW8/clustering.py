@@ -1,142 +1,185 @@
 from bs4 import BeautifulSoup
+import os
 import numpy as np
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.decomposition import LatentDirichletAllocation
-import os
+from sklearn.cluster import KMeans
 
-topBM25 = {}
-topQREL = {}
+# =========================
+# CONFIG
+# =========================
+DOC_PATH = "cranfield-trec-dataset-main/cran.all.1400.xml"
 
-topicThreshold = 30
-topWords = 30
+T = 10   # LDA topics
+K = 10   # clusters
+TOP_WORDS = 10
 
-def buildDict(file):
-    topDict = {}
-    for line in file.readlines():
-        words = line.split(' ')
-        if words[0] not in topDict:
-            topDict[words[0]] = set()
-        if len(topDict[words[0]]) < 1000:
-            topDict[words[0]].add(words[2])
-
-    return topDict
-                
-
-def buildTopDocs(resultFile, model):
-    global topBM25, topQREL
-    f = open(resultFile)
-    if model == 'BM25':
-        topBM25 = buildDict(f)
-    elif 'QREL':
-        topQREL = buildDict(f)
-    f.close()
+# =========================
+# GLOBALS
+# =========================
+docText = []
+docMap = {}
+relDoc = {}
+clusters = {}
+VectorMatrix = None
 
 
-def queryDocUnion(queryId):
-    return topBM25[queryId].union(topQREL[queryId])
+# =========================
+# LOAD DOCUMENTS
+# =========================
+def buildDocText():
+    global docText, docMap
+
+    path = "cranfield-trec-dataset-main/cran.all.1400.xml"
+
+    with open(path, encoding="utf-8", errors="ignore") as f:
+        content = f.read()
+
+    # IMPORTANT FIX: use html.parser (NOT xml)
+    soup = BeautifulSoup(content, "html.parser")
+
+    docs = soup.find_all("doc")
+
+    print("DEBUG DOC TAGS FOUND:", len(docs))
+
+    for i, doc in enumerate(docs):
+        docno = doc.find("docno")
+        text = doc.find("text")
+
+        if docno is None:
+            continue
+
+        docMap[i] = docno.text.strip()
+        docText.append(text.text.strip() if text else "")
 
 
-def getDocText(docFile, docId):
-    path = "AP_DATA/ap89_collection/"
-    file = open(path+docFile, encoding='utf-8', errors='replace')
-    page = file.read()
-    validPage = "<root>" + page + "</root>"
-    soup = BeautifulSoup(validPage, 'xml')
-    docs = soup.find_all('DOC')
-    for doc in docs:
-        if (doc.find('DOCNO').get_text().strip()) == docId:
-            texts = doc.find_all('TEXT')
-            print (len(texts))
-            input()
-            text = ""
-            for txt in texts:
-                text += txt.get_text()
-            file.close()
-            return text
-
-    return ''
-    
-def printTopics(model, feature_names, n_top_words, topTopics = {}):
-    text = ''
-    for topic_id, topic in enumerate(model.components_):
-        if len (topTopics) > 0:
-            if topic_id not in topTopics:
-                continue
-            line = '\nTopic %d (%f):' % (int(topic_id + 1), topTopics[topic_id])
-        else:
-            line = '\nTopic %d:' % (int(topic_id + 1))
-        line += printTopicTopWords(topic, feature_names, n_top_words)
-        text += line
-    return text
-
-def getTop10Topics(doc_topic):
-    topic_most_pr = doc_topic.argsort()[:-10-1:-1]
-    top = {}
-    for i in topic_most_pr:
-        top[i] = round(doc_topic[i], 5)
-
-    return top
-
-def printDocs(docs_topic_distribution, feature_names, docMap, model, n_top_words):
-    text = ''
-    for n in range(docs_topic_distribution.shape[0]):
-        topic_most_pr = getTop10Topics(docs_topic_distribution[n])
-        text += "\ndoc {} top 10 topics: {}\n".format(docMap[n],
-                                            printTopics(model, feature_names, n_top_words, topic_most_pr))
-
-    return text
-
-def printTopicTopWords(topic, feature_names, n_top_words):
-    return ''.join([feature_names[i] + ' ' + str(round(topic[i], 2))
-                         +' | ' for i in topic.argsort()[:-n_top_words - 1:-1]])
-        
+# =========================
+# LDA
+# =========================
 def runLDA():
-    stoplist = open('AP_DATA/stoplist.txt')
-    stopwords = []
-    for word in stoplist.readlines():
-        stopwords.append(word.replace('\n',''))
-    stoplist.close()
+    global VectorMatrix
 
-    tot = 1
-    for queryId in topBM25:
-        if tot == 25:
-            break
-        if queryId in topQREL:
-            print (queryId)
-            queryDocs = queryDocUnion(queryId)
-            textDocs = []
-            docMap = {}
-            i = 0
-            for docId in queryDocs:
-                textDocs.append(getDocText(docId.split('-')[0], docId))
-                docMap[i] = docId
-                i+=1
-                
-            vectorizer = CountVectorizer(stop_words = stopwords)
-            sparseMatrix = vectorizer.fit_transform(textDocs)
+    vectorizer = CountVectorizer(
+        stop_words="english",
+        max_features=5000,
+        token_pattern=r"(?u)\b[a-zA-Z]{3,}\b"
+    )
 
-            lda = LatentDirichletAllocation(n_components = topicThreshold, max_iter=5, 
-                                        learning_method='online',                 
-                                        learning_offset=50., random_state=0)
+    X = vectorizer.fit_transform(docText)
 
-            lda.fit(sparseMatrix)
+    lda = LatentDirichletAllocation(
+        n_components=T,
+        max_iter=20,
+        learning_method="batch",
+        random_state=42
+    )
 
-            f1 = open('partA_topics/query' + queryId + '.txt', "w")
-            f1.write(printTopics(lda, vectorizer.get_feature_names(), topWords))
-            f1.close()
-            
-            f2 = open('partA_docs/query' + queryId + '.txt', "w")
-            f2.write(printDocs(lda.transform(sparseMatrix), vectorizer.get_feature_names(), docMap, lda, topWords))
-            
-            f2.close()
-            
-            tot += 1
-    
+    lda.fit(X)
+    VectorMatrix = lda.transform(X)
 
-buildTopDocs('qrels.adhoc.51-100.AP89.txt', 'QREL')
-buildTopDocs('OkapiBM25_Results_File.txt', 'BM25')
+    words = vectorizer.get_feature_names_out()
+
+    print("\n===== LDA TOP WORDS =====\n")
+    for i, topic in enumerate(lda.components_):
+        top_words = [words[j] for j in topic.argsort()[-TOP_WORDS:]]
+        print(f"Topic {i+1}: {top_words}")
+
+
+# =========================
+# KMEANS
+# =========================
+def runKmeans():
+    global clusters
+
+    kmeans = KMeans(n_clusters=K, random_state=42, n_init=10)
+    labels = kmeans.fit_predict(VectorMatrix)
+
+    for idx, label in enumerate(labels):
+        if label not in clusters:
+            clusters[label] = set()
+        clusters[label].add(docMap[idx])
+
+    print("\n===== CLUSTERS =====\n")
+    for c in clusters:
+        print(f"Cluster {c}: {list(clusters[c])[:10]}")
+
+
+# =========================
+# RELEVANCE FILE (QRELS)
+# =========================
+def buildRelevantDocs():
+    global relDoc
+
+    qrels_path = "cranfield-trec-dataset-main/cranqrel.trec.txt"
+
+    with open(qrels_path, "r") as f:
+        for line in f:
+            q, _, doc, rel = line.split()
+            if rel == "1":
+                if doc not in relDoc:
+                    relDoc[doc] = set()
+                relDoc[doc].add(q)
+
+
+# =========================
+# RELATION FUNCTIONS
+# =========================
+def isSQ(doc1, doc2):
+    return doc1 in relDoc and doc2 in relDoc and len(relDoc[doc1] & relDoc[doc2]) > 0
+
+
+def isSC(doc1, doc2):
+    for c in clusters:
+        if doc1 in clusters[c] and doc2 in clusters[c]:
+            return True
+    return False
+
+
+# =========================
+# EVALUATION
+# =========================
+def evaluate():
+    SQSC = SQDC = DQSC = DQDC = 0
+
+    docs = list(relDoc.keys())
+
+    for i in range(len(docs)):
+        for j in range(i + 1, len(docs)):
+
+            d1 = docs[i]
+            d2 = docs[j]
+
+            sq = isSQ(d1, d2)
+            sc = isSC(d1, d2)
+
+            if sq and sc:
+                SQSC += 1
+            elif sq and not sc:
+                SQDC += 1
+            elif not sq and sc:
+                DQSC += 1
+            else:
+                DQDC += 1
+
+    acc = (SQSC + DQDC) / (SQSC + SQDC + DQSC + DQDC)
+
+    print("\n===== EVALUATION =====")
+    print("SQSC:", SQSC)
+    print("SQDC:", SQDC)
+    print("DQSC:", DQSC)
+    print("DQDC:", DQDC)
+    print("Accuracy:", acc)
+
+    return acc
+
+
+# =========================
+# MAIN PIPELINE
+# =========================
+buildDocText()
+print("Loaded docs:", len(docText))
 
 runLDA()
-
-        
-    
+runKmeans()
+buildRelevantDocs()
+evaluate()

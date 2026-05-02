@@ -5,8 +5,12 @@
  - Northeastern University
 """
 from urllib.parse import urlparse
-
-
+from elasticsearch import Elasticsearch
+es = Elasticsearch(
+    "https://localhost:9200",
+    basic_auth=("elastic", "e7kUbdwwZ82mdCtw*9Je"),
+    verify_certs=False
+)
 class Canonicalizer:
 
     @staticmethod

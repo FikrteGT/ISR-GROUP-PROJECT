@@ -1,3 +1,9 @@
+from elasticsearch import Elasticsearch
+es = Elasticsearch(
+    "https://localhost:9200",
+    basic_auth=("elastic", "e7kUbdwwZ82mdCtw*9Je"),
+    verify_certs=False
+)
 def score_evaluator(file_path):
 
     with open(file_path, 'r') as File:

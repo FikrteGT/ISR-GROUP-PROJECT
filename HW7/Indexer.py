@@ -5,8 +5,15 @@ import os
 import re
 from collections import Counter
 import dill
-
-es = Elasticsearch()
+import warnings
+warnings.filterwarnings("ignore")
+es = Elasticsearch(
+    "https://localhost:9200",
+    basic_auth=("elastic", "=n_K04+d1hF7948K80o*"),
+    verify_certs=False,
+    ssl_show_warn=False
+)
+# es = Elasticsearch()
 path = "Files/"
 start_time = time.time()
 i = 0
@@ -30,7 +37,11 @@ for filename in os.listdir(path):
             'text': text,
             'label': label
         }
-        res = es.index(index="hw7_index", doc_type='document', id=soup.emailid.text.strip(), body=jsonDoc)
+        res = es.index(
+    index="hw7_index",
+    id=soup.emailid.text.strip(),
+    document=jsonDoc
+)
         print("Indexed %d document" % i)
 
 temp = time.time() - start_time

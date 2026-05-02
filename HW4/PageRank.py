@@ -1,126 +1,43 @@
-
 import math
-import decimal
 
-decimal.getcontext().prec = 10
-graphPages = {}
+graph = {}
 d = 0.85
 
+with open("linkgraph.txt", "r") as f:
+    for line in f:
+        parts = line.strip().split()
+        node = parts[0]
+        links = parts[1:]
+        graph[node] = links
 
-class Page:
-    def __init__(self, page, rank, inLinkPages, noOfOutLinks):
-        self.page = page
-        self.rank = rank
-        self.inLinkPages = inLinkPages
-        self.noOfOutLinks = noOfOutLinks
+N = len(graph)
+rank = {n: 1/N for n in graph}
 
-    def setRank(self, value):
-        self.rank = value
+def pagerank(iterations=30):
+    global rank
 
-    def setnoOfOutLinks(self, value):
-        self.noOfOutLinks = value
+    for _ in range(iterations):
+        new_rank = {n: (1-d)/N for n in graph}
 
-    def setinLinkPages(self, value):
-        self.inLinkPages = value
+        sink_rank = sum(rank[n] for n in graph if len(graph[n]) == 0)
 
-
-def getSinkNodes():
-    return {k: v for k, v in graphPages.items() if v.noOfOutLinks == 0}
-
-def countInlink():
-    return {k: v for k, v in graphPages.items() if len(v.inLinkPages) > 0}
-
-def getSourceNodes():
-    return {k: v for k, v in graphPages.items() if len(v.inLinkPages) == 0}
-
-def countOutlink():
-    return {k: v for k, v in graphPages.items() if v.noOfOutLinks > 0}
-
-def getOutLinks(page):
-    return {k: v for k, v in graphPages.items() if page in v.inLinkPages}
-
-
-def perplexity(entropy):
-    return (pow(2, decimal.Decimal(entropy)))
-
-
-def entropy(rank):
-    entropy = rank * float(math.log(rank, 2))
-    return entropy
-
-
-def initializegraphPages(graphFile):
-    with open(graphFile, 'r') as textFile:
-        for line in textFile.readlines():
-            if line == '' or line == 's' or line == '\n':
+        for n in graph:
+            if len(graph[n]) == 0:
                 continue
-            pages = line.replace(' \n', '').replace('\n', '').split(' ')
+            share = rank[n] / len(graph[n])
+            for l in graph[n]:
+                if l in new_rank:
+                    new_rank[l] += d * share
 
-            if (pages[0] != '' and pages[0] != 's'):
-                if pages[0] in graphPages:
-                    graphPages[pages[0]].setinLinkPages(pages[1:len(pages)])
-                else:
-                    graphPages[pages[0]] = (Page
-                                            (pages[0], (float(1) / len(pages)),
-                                             pages[1:len(pages)], 0))
-            for restPage in pages[1:len(pages)]:
-                if (restPage != '' and restPage != 's'):
-                    if restPage in graphPages:
-                        graphPages[restPage].noOfOutLinks += 1
-                    else:
-                        graphPages[restPage] = (Page
-                                                (pages[0], (float(1) / len(pages)),
-                                                 [], 1))
+        for n in graph:
+            new_rank[n] += d * sink_rank / N
 
-def calculatePageRank(sinkNodes):
-    sinkPR = 0
-    for node in sinkNodes:
-        sinkPR += graphPages[node].rank
+        rank = new_rank
 
-    pageIndex = 0
-    totalEntropy = 0
-    noOfPages = len(graphPages)
+pagerank()
 
-    for page in graphPages:
-        newPR = (1 - d) / noOfPages
-        newPR += d * sinkPR / noOfPages
-        inLinks = graphPages[page].inLinkPages
-        for link in inLinks:
-            newPR += d * graphPages[link].rank / graphPages[link].noOfOutLinks
-        graphPages[page].setRank(newPR)
-        totalEntropy += entropy(newPR)
-    return perplexity(-totalEntropy)
+def topk(scores, k=10):
+    return sorted(scores.items(), key=lambda x: x[1], reverse=True)[:k]
 
-
-initializegraphPages("wt2g_inlinks.txt")
-sinkNodes = getSinkNodes()
-print("Sink Nodes: %d" %len(sinkNodes))
-for sn in sinkNodes:
-    print(sn)
-sourceNodes = getSourceNodes()
-inLinkCount = countInlink()
-ouLinkCount = countOutlink()
-
-convergence = 0
-round = 0
-prevPerplexity = 0
-curPerplexity = 0
-while convergence < 4:
-    curPerplexity = calculatePageRank(sinkNodes)
-    if abs((curPerplexity - prevPerplexity)) < 1:
-        convergence += 1
-    else:
-        convergence = 0
-    round += 1
-    prevPerplexity = curPerplexity
-print("Number of rounds: %d" %round)
-#
-with open("wt2g_rank.txt", 'a+') as textFile:
-    pagesByRank = sorted(graphPages, key=lambda x: graphPages[x].rank)
-    pageIndex = 0
-    for page in reversed(pagesByRank):
-        if (pageIndex >= 500):
-            break
-        textFile.write('%s %f %d\n' % (page, graphPages[page].rank, len(graphPages[page].inLinkPages)))
-        pageIndex += 1
-    textFile.close()
+print("\nTOP 10 PAGERANK")
+print(topk(rank))

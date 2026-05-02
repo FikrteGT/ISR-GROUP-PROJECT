@@ -1,13 +1,22 @@
 from elasticsearch import Elasticsearch
+#es = Elasticsearch(hosts=["http://localhost:9200"])
 import time
 from elasticsearch_dsl import Search
 import Canonicalizer
+import warnings
+from elasticsearch import ElasticsearchWarning
 
+warnings.filterwarnings("ignore")
+es = Elasticsearch(
+    "https://localhost:9200",
+    basic_auth=("elastic", "e7kUbdwwZ82mdCtw*9Je"),
+    verify_certs=False
+)
 def scroller(docID):
     for id in docID:
         id = id.strip()
         outlinks = set()
-        res = es.get(index="hw3_crawl", doc_type='document', id=id)
+        res = es.get(index="hw3_crawl", id=id)
         outlinks = set(res['_source'].get("outlinks").strip().split('\n'))
         for ol in outlinks:
             ol = ol.strip()
@@ -19,11 +28,11 @@ def scroller(docID):
 
 canon = Canonicalizer.Canonicalizer
 start_time = time.time()
-es = Elasticsearch()
+
 linkgraphTemp = {}
 linkGraph = {}
 sinkNodes = set()
-s = Search(using=es, index="hw3_crawl", doc_type='document')
+s = Search(using=es, index="hw3_crawl")
 s = s.source([])
 docID = set(h.meta.id for h in s.scan())
 scroller(docID)
@@ -39,7 +48,7 @@ for ol in linkgraphTemp:
 print(sinkNodes)
 print(len(sinkNodes))
 
-outputFile = open("linkgraph.txt", "w")
+outputFile = open("C:\\Users\\pc\\Desktop\\ISR-assignment\\Information-Retrieval-master\\HW4\\linkgraph.txt", "w")
 for ol in linkGraph:
     line = ol
     for il in linkGraph[ol]:

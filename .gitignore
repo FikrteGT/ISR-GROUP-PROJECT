@@ -14,3 +14,12 @@ HW2/.idea/.name
 HW8/AP_DATA/
 
 HW7/*.p
+# Ignore Elasticsearch
+HW4/elasticsearch-9.3.3/
+HW7/elasticsearch-9.3.3/
+HW8/elasticsearch-9.3.3/
+
+# Ignore Cranfield dataset
+HW4/cranfield-trec-dataset-main/
+HW7/cranfield-trec-dataset-main/
+HW8/cranfield-trec-dataset-main/
