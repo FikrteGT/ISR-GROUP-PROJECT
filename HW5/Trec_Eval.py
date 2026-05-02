@@ -6,7 +6,7 @@ def retrieveQueryResults(rankList):
     queryResults = OrderedDict()
     with open(rankList, 'r') as f:
         for queryResult in f:
-            # items = queryResult.split('\t')
+         
             items = queryResult.split(' ')
             queryID = items[0]
             documentID = items[2]
