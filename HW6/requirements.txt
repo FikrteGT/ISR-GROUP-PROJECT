@@ -1,0 +1,4 @@
+elasticsearch>=8
+elasticsearch-dsl>=8
+pandas>=2
+scikit-learn>=1.4

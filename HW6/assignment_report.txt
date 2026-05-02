@@ -1,0 +1,83 @@
+**Assignment Report**
+
+**Introduction**: This document summarizes the CACM run performed in this workspace. It describes objectives, system requirements, implementation, and the actual run values produced by the pipeline. Workspace root: [HW6](assignment_report.txt).
+
+**Objectives**:
+- **Dataset**: Switch the pipeline to the CACM collection and parse its line-based format.
+- **Outputs**: Generate a static feature matrix CSV and TREC-formatted run files for multiple models.
+- **Evaluation**: Compute MAP, nDCG@10, and P@10 for each model and provide per-query results.
+
+**Problem Statement**:
+- The original code expected AP-style inputs (XML or AP qrels). CACM uses a different format (`.I/.T/.W`), so parsers and scoring needed adjustments to run efficiently and produce reproducible metrics.
+
+**System Requirements**:
+- **OS**: Windows (tested here).
+- **Python**: 3.10+ inside `.venv` (use the virtual environment in the repo).
+- **Packages**: Installed from `requirements.txt` (elasticsearch, pandas, scikit-learn, numpy, scipy).
+- **Optional**: Perl + `trec_eval.pl` if you prefer the canonical TREC evaluator (not required here; Python evaluator produced the final numbers).
+
+**Tools & Technologies Used**:
+- **Core scripts**: [build_feature_matrix.py](build_feature_matrix.py), [ir_pipeline.py](ir_pipeline.py), [Feature_Matrix.py](Feature_Matrix.py), [train_ranker.py](train_ranker.py)
+- **Data**: [cacm_dataSet/cacm.all](cacm_dataSet/cacm.all), [cacm_dataSet/query.text](cacm_dataSet/query.text), [cacm_dataSet/qrels.text](cacm_dataSet/qrels.text)
+- **Outputs**: [cacm_staticFeatureMatrix.csv](cacm_staticFeatureMatrix.csv), run files in [cacm_outputs](cacm_outputs)
+
+**Methodology**:
+- Detect CACM format and parse documents and queries.
+- Build an in-memory inverted index (term postings and doc stats).
+- Score queries using TF-IDF, Okapi TF, and BM25 (postings-based scoring for speed).
+- Produce `cacm_staticFeatureMatrix.csv` and TREC-style run files in `cacm_outputs/`.
+- Evaluate runs using an internal Python evaluator (produces `.eval.txt` files and an aggregated summary file).
+
+**Project Structure** (key files):
+- **Script**: [build_feature_matrix.py](build_feature_matrix.py) — orchestrates parsing, indexing, scoring, and file output.
+- **Library**: [ir_pipeline.py](ir_pipeline.py) — parsing (CACM-aware), indexing, scoring, write helpers.
+- **Legacy**: [Feature_Matrix.py](Feature_Matrix.py) — older AP-oriented code (patched for safety).
+- **Data**: `cacm_dataSet/` — input collection and qrels.
+- **Outputs**: `cacm_staticFeatureMatrix.csv`, directory [cacm_outputs](cacm_outputs) with run files and `.eval.txt` files.
+
+**Implementation Details**:
+- **Parsing**: CACM parsing recognizes `.I` document boundaries and `.W` query text; query IDs normalized to match qrels.
+- **Indexing**: `InMemoryIndex` stores term postings, doc lengths, collection frequency for efficient scoring.
+- **Scoring**: Implemented TF-IDF (idf * tf), Okapi TF (document-length normalization), BM25 (k1=1.2,b=0.75). Laplace/JM are available but were excluded from the fast CACM run.
+- **Evaluation**: A Python script computed MAP, nDCG@10, P@10 and wrote per-run `.eval.txt` files.
+
+**Results / Output (real run values)**
+- Files produced:
+	- [cacm_staticFeatureMatrix.csv](cacm_staticFeatureMatrix.csv) — feature rows (10721 rows).
+	- [cacm_outputs/TF-IDF_Results_File.txt](cacm_outputs/TF-IDF_Results_File.txt)
+	- [cacm_outputs/OkapiBM25_Results_File.txt](cacm_outputs/OkapiBM25_Results_File.txt)
+	- [cacm_outputs/OkapiTF_Results_File.txt](cacm_outputs/OkapiTF_Results_File.txt)
+	- Evaluation outputs: [cacm_outputs/TF-IDF_Results_File.txt.eval.txt](cacm_outputs/TF-IDF_Results_File.txt.eval.txt), [cacm_outputs/OkapiBM25_Results_File.txt.eval.txt](cacm_outputs/OkapiBM25_Results_File.txt.eval.txt), [cacm_outputs/OkapiTF_Results_File.txt.eval.txt](cacm_outputs/OkapiTF_Results_File.txt.eval.txt)
+	- Summary: [cacm_evaluation_summary.txt](cacm_evaluation_summary.txt)
+
+- Corpus & run stats:
+	- **Documents parsed**: 3204
+	- **Queries parsed**: 64
+	- **Queries with qrels**: 52
+	- **Feature matrix rows**: 10721
+
+- Aggregated evaluation metrics (averaged across qids present in qrels):
+	- **TF-IDF**: MAP = 0.170144 ; nDCG@10 = 0.268293 ; P@10 = 0.180769
+	- **Okapi BM25**: MAP = 0.286610 ; nDCG@10 = 0.427835 ; P@10 = 0.288462
+	- **Okapi TF**: MAP = 0.159165 ; nDCG@10 = 0.285230 ; P@10 = 0.209615
+
+For full per-query values open the `.eval.txt` files in `cacm_outputs/`.
+
+**Challenges Faced**
+- Format mismatch: CACM uses a simple textual structure; original code expected XML/AP qrels.
+- Performance: naive scanning per query was too slow on CACM; inverted-postings scoring was implemented.
+- Evaluation tooling: `trec_eval.pl` not available on this machine; Python evaluator was used and saved canonical-style `.eval.txt` outputs.
+
+**Conclusion**
+- The pipeline was successfully adapted to CACM. Run files and an extensive feature matrix were produced and evaluated. BM25 gave the best aggregated MAP and nDCG@10 for this run.
+
+**Recommendations**
+- If you need canonical `trec_eval.pl` outputs, install Perl and run the `.eval` commands against the CACM run files.
+- To extend the analysis: re-run including Laplace and Jelinek-Mercer, tune BM25 parameters, or train `train_ranker.py` on `cacm_staticFeatureMatrix.csv`.
+- Keep `ir_pipeline.py`’s CACM parsing guarded so Cranfield or other formats still work.
+
+**References**
+- CACM dataset in `cacm_dataSet/` (see files listed above)
+- Pipeline scripts: [ir_pipeline.py](ir_pipeline.py), [build_feature_matrix.py](build_feature_matrix.py), [train_ranker.py](train_ranker.py)
+
+**Generated**: 2026-05-01 — this report updated to reflect the CACM run and real evaluation values.
