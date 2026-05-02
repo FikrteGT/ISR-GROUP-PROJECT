@@ -8,7 +8,7 @@ from collections import defaultdict
 from collections import OrderedDict
 import dill
 
-#To store the term_freq and positions of the term
+
 class TermVector:
     def __init__(self, tf, pos):
         self.tf = tf
