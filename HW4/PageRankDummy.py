@@ -5,7 +5,12 @@ import math
 import operator
 import decimal
 decimal.getcontext().prec = 10
-
+from elasticsearch import Elasticsearch
+es = Elasticsearch(
+    "https://localhost:9200",
+    basic_auth=("elastic", "e7kUbdwwZ82mdCtw*9Je"),
+    verify_certs=False
+)
 graphPages = {}
 d = 0.85
 

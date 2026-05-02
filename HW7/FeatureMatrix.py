@@ -12,7 +12,12 @@ import time
 from nltk.corpus import stopwords
 import nltk
 
-es = Elasticsearch()
+# es = Elasticsearch()
+es = Elasticsearch(
+    "https://localhost:9200",
+    basic_auth=("elastic", "=n_K04+d1hF7948K80o*"),
+    verify_certs=False
+)
 featureMatrix = {}
 uniGrams = set()
 
@@ -119,7 +124,7 @@ def createSparseMatrix(nGrams, filename, docIDLabel):
     csvfile.close()
 
 def removeStopWords(nGrams):
-    with open("/Users/Zion/Downloads/AP_DATA/stoplist.txt") as sfile:
+    with open("AP_DATA/stoplist.txt", "r", encoding="utf-8") as sfile:
         stopWords = sfile.readlines()
     stopWords = list(filter(None, stopWords))
     keywords = list()

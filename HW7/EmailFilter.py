@@ -3,78 +3,154 @@ import email
 from bs4 import BeautifulSoup
 import re
 
-path_to_data_files = '/Users/Zion/Downloads/trec07p/data/'
-url = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+', re.I)
+# -----------------------------
+# AUTO PATHS (works in HW7 folder)
+# -----------------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+DATA_DIR = os.path.join(BASE_DIR, "trace07", "trec07p", "data")
+INDEX_FILE = os.path.join(BASE_DIR, "trace07", "trec07p", "full", "index")
+OUTPUT_DIR = os.path.join(BASE_DIR, "Files")
 
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+url = re.compile(
+    r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+',
+    re.I
+)
+
+# -----------------------------
+# LOAD LABELS (spam / ham)
+# -----------------------------
 def spamHam():
     labelDict = {}
-    with open('/Users/Zion/Downloads/trec07p/full/index', 'r') as indexFile:
-        for line in indexFile.readlines():
-            lineStr = line.split(' ')
-            id = lineStr[1].rsplit('.', 1)[1].strip()
-            label = lineStr[0]
-            labelDict[id] = label
-    indexFile.close()
+
+    if not os.path.exists(INDEX_FILE):
+        print("INDEX FILE NOT FOUND:")
+        print(INDEX_FILE)
+        return labelDict
+
+    with open(INDEX_FILE, "r", encoding="utf-8", errors="ignore") as indexFile:
+        for line in indexFile:
+            parts = line.strip().split()
+
+            if len(parts) < 2:
+                continue
+
+            label = parts[0]
+            path = parts[1]
+
+            # example: ../data/inmail.1
+            email_id = path.split(".")[-1]
+
+            labelDict[email_id] = label
+
     return labelDict
 
+
+# -----------------------------
+# EXTRACT EMAIL BODY
+# -----------------------------
 def getBody(parts):
     ret = []
-    if type(parts) == str:
+
+    if isinstance(parts, str):
         ret.append(parts)
-    elif type(parts) == list:
+
+    elif isinstance(parts, list):
         for part in parts:
             if part.is_multipart():
                 ret += getBody(part.get_payload())
             else:
                 ret += getBody(part)
-    elif parts.get_content_type().split(' ')[0] == 'text/plain':
-        ret.append(parts.get_payload())
-    elif parts.get_content_type().split(' ')[0] == 'text/html':
-        soup = BeautifulSoup(parts.get_payload(), 'html.parser')
-        email_content_string = soup.get_text()
-        ret.append(email_content_string)
+
+    else:
+        try:
+            ctype = parts.get_content_type()
+
+            if ctype == "text/plain":
+                ret.append(str(parts.get_payload()))
+
+            elif ctype == "text/html":
+                soup = BeautifulSoup(str(parts.get_payload()), "html.parser")
+                ret.append(soup.get_text())
+
+        except:
+            pass
+
     return ret
 
-def clean_string(input_string):
 
-    cleaned_string = input_string.replace('-', ' ').replace('.', ' ').replace('?', ' ') \
-        .replace('/', ' ').replace('!', ' ').replace('@', ' ').replace('#', ' ').replace(',', ' ') \
-        .replace('%', ' ').replace(':', ' ').replace(';', ' ').replace('<', ' ').replace('>', ' ').replace('$', ' ')\
-    .replace('*', ' ').replace('&', ' ').replace('_', ' ').replace('~', ' ').replace('[', ' ').replace(']', ' ')\
-    .replace('(', ' ').replace(')', ' '). replace('\\', ' ').replace('{', ' ').replace('}', ' ').replace('^', ' ')\
-    .replace('"', ' ').replace('\n', ' ').replace('=', ' ').replace('+', ' ')
+# -----------------------------
+# CLEAN TEXT
+# -----------------------------
+def clean_string(text):
+    text = re.sub(r"http\S+", " ", text)
+    text = re.sub(r"[^a-zA-Z0-9\s]", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
 
-    cleaned_string = ' '.join(cleaned_string.split())
-    return cleaned_string
 
+# -----------------------------
+# MAIN PROCESS
+# -----------------------------
 def load_trec_spam_files():
     labelDict = spamHam()
-    total_files = os.listdir(path_to_data_files)
-    for each_file in total_files:
-        with open(path_to_data_files + each_file, 'r', encoding="ISO-8859-1") as Email_File:
-            emailID = each_file.split('.')[1]
-            msg = email.message_from_file(Email_File)
-            subject = msg['Subject']
-            body = '\n'.join(
-                p for p in getBody(msg.get_payload())
-                if type(p) == str
-            )
-            emailText =''
-            if not subject:
-                emailText += body
-            elif not body:
-                emailText += subject
-            else:
-                emailText = subject + '\n' + body
 
-            emailText = url.sub(' ', emailText)
-            emailText = clean_string(emailText)
-            label = labelDict[emailID]
-            with open('Files/%s.txt' %emailID, 'w') as eFile:
-                content = "<EMAILID>%s</EMAILID>\n<TEXT>%s</TEXT>\n<LABEL>%s</LABEL>" %(emailID, emailText, label)
-                eFile.write(content)
-            eFile.close()
-        Email_File.close()
+    if not os.path.exists(DATA_DIR):
+        print("DATA FOLDER NOT FOUND:")
+        print(DATA_DIR)
+        return
 
+    files = os.listdir(DATA_DIR)
+    count = 0
+
+    for each_file in files:
+        file_path = os.path.join(DATA_DIR, each_file)
+
+        if not os.path.isfile(file_path):
+            continue
+
+        try:
+            with open(file_path, "r", encoding="ISO-8859-1", errors="ignore") as Email_File:
+
+                emailID = each_file.split(".")[-1]
+
+                msg = email.message_from_file(Email_File)
+
+                subject = msg["Subject"] if msg["Subject"] else ""
+
+                body = "\n".join(
+                    p for p in getBody(msg.get_payload())
+                    if isinstance(p, str)
+                )
+
+                emailText = subject + "\n" + body
+                emailText = clean_string(emailText)
+
+                label = labelDict.get(emailID, "ham")
+
+                output_file = os.path.join(OUTPUT_DIR, f"{emailID}.txt")
+
+                with open(output_file, "w", encoding="utf-8") as eFile:
+                    content = f"""<EMAILID>{emailID}</EMAILID>
+<TEXT>{emailText}</TEXT>
+<LABEL>{label}</LABEL>"""
+                    eFile.write(content)
+
+                count += 1
+
+                if count % 500 == 0:
+                    print("Processed:", count)
+
+        except Exception as e:
+            print("Skipped:", each_file, e)
+
+    print("DONE")
+    print("Total Processed:", count)
+
+
+# -----------------------------
+# RUN
+# -----------------------------
 load_trec_spam_files()
