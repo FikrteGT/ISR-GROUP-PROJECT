@@ -34,20 +34,24 @@ def Total_okapiTF(qNo, termVector, termStats, docInfo):
 
 def Okapi_BM25(qNo, termVector, termStats, docInfo):
     k1 = 1.2
-    k2 = 1.2
+    k2 = 100
     b = 0.75
     docScore = []
     dictDocID = restructureTV(termVector)
+    queryFreq = {}
+    for key in termVector:
+        queryFreq[key] = queryFreq.get(key, 0) + 1
     for docid in dictDocID:
-        bm25 = 0
+        bm25 = 0.0
         for key in dictDocID[docid]:
             tfwd = dictDocID[docid][key][0]
             docLen = int(docInfo.get(docid))
             df = int(termStats[key][0])
-            op1 = (math.log10((D+0.5)/(df+0.5)))
-            op2 = ((tfwd + (k1*tfwd))/(tfwd+(k1*((1-b)+(b*(docLen/avgDocLen))))))
-            op3 = ((tfwd + (k2 * tfwd))/(tfwd + k2))
-            bm25 += op1 * op2 * op3
+            qtf = queryFreq.get(key, 1)
+            idf = math.log((D - df + 0.5) / (df + 0.5) + 1)
+            termWeight = ((tfwd * (k1 + 1)) / (tfwd + k1 * (1 - b + b * (docLen / avgDocLen))))
+            queryWeight = ((qtf * (k2 + 1)) / (qtf + k2))
+            bm25 += idf * termWeight * queryWeight
         docScore.append([docid, bm25])
     docScore.sort(key=itemgetter(1), reverse=True)
     with open('Files/Unstemmed/OkapiBM25_Results_File.txt', 'a+') as queryResults:
@@ -203,17 +207,17 @@ avgDocLen = sum(docInfo.values()) / len(docInfo)
 V = len(catalog.keys())
 #print(V)
 
-D = 84678
-qNums = queryNums()
+D = len(docInfo)
+qNums = range(1,65)
 i = 0
 for qNo in qNums:
     i += 1
-    termStats = unpickler('Files/Unstemmed/Pickles/termStats_Proximity%s.p' % i)
-    termVector = unpickler('Files/Unstemmed/Pickles/termVector_Proximity%s.p' % i)
-    print("Running Query %d out of 25" % i)
+    termStats = unpickler('Files/Unstemmed/Pickles/termStats%s.p' % i)
+    termVector = unpickler('Files/Unstemmed/Pickles/termVector%s.p' % i)
+    print("Running Query %d out of 64" % i)
     # Total_okapiTF(qNo, termVector, termStats, docInfo)
-    # Okapi_BM25(qNo, termVector, termStats, docInfo)
+    Okapi_BM25(qNo, termVector, termStats, docInfo)
     # UnigramLM_Laplace(qNo, termVector, termStats, docInfo)
-    proximity(qNo, termVector, termStats, docInfo)
+    # proximity(qNo, termVector, termStats, docInfo)
     # UnigramLM_JelinekMercer(qNo, termVector, termStats, docInfo)
 print("Done!")
