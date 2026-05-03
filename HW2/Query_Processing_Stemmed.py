@@ -4,9 +4,20 @@ from stemming.porter2 import stem
 from string import digits
 import re
 import time
-from Stemmed_Stopwords_Removed_Index import TermVector
 from collections import OrderedDict
 import dill
+
+#To store the term_freq and positions of the term
+class TermVector:
+    def __init__(self, tf, pos):
+        self.tf = tf
+        self.pos = pos
+
+    def getTF(self):
+        return self.tf
+
+    def getPos(self):
+        return self.pos
 
 def unpickler(file):
     f = open(file, 'rb')
@@ -23,14 +34,25 @@ def parseCatalog(file):
     return catalog
 
 def queryMaker():
-    f = open('QueryUpdated.txt', 'r')
     queries = []
-    for line in f:
-        queries.append(re.sub('[\-\.\"\s]+', ' ', line).strip().translate(None, digits))
+    with open('Files/query.text', 'r') as f:
+        current_query = []
+        for line in f:
+            line = line.strip()
+            if line.startswith('.I'):
+                if current_query:
+                    queries.append(' '.join(current_query))
+                    current_query = []
+            elif line.startswith('.W'):
+                pass  # start collecting query text
+            elif line and not line.startswith('.'):
+                current_query.append(line)
+        if current_query:
+            queries.append(' '.join(current_query))
     return queries
 
 def queryProcessor(query):
-    with open("/Users/Zion/Downloads/AP_DATA/stoplist.txt") as sfile:
+    with open("Files/common_words") as sfile:
         stopWords = sfile.readlines()
     stopWords = filter(None, stopWords)
     keywords = ""
@@ -43,15 +65,18 @@ def queryProcessor(query):
         if (flag != 1):
             keywords += word + " "
         flag = 0
-    keywords = keywords.translate(None, string.punctuation)
+    keywords = keywords.translate(str.maketrans('', '', string.punctuation))
     return keywords.strip()
 
 def getInfo(key, catalog, termMap, docMap):
     keyInfo = OrderedDict()
     invList = OrderedDict()
     docDict = OrderedDict()
+    termid = termMap.get(key)
+    if termid is None:
+        return invList, keyInfo
     indexFile = open("Files/Stemmed/invertedFile0.txt", 'r')
-    offset = catalog.get(key)[0]
+    offset = catalog.get(str(termid))[0]
     indexFile.seek(int(offset))
     line = indexFile.readline()
     df = line.split(':')[0].split(',')[1]

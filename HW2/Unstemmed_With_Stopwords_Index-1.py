@@ -1,12 +1,13 @@
 from stemming.porter2 import stem
 import time
-from bs4 import BeautifulSoup
 import os
 import re
 import regex
 from collections import defaultdict
 from collections import OrderedDict
 import dill
+
+BASE_PATH = os.path.join('Files', 'Unstemmed')
 
 #To store the term_freq and positions of the term
 class TermVector:
@@ -46,17 +47,17 @@ class CatalogTerm:
 def tokenizer(text):
     posToken = []
     i = 0
-    tokens = re.split("[^\w\.]*", text) #split on anything apart from words and periods.
+    tokens = re.split(r"[^\w\.]*", text) #split on anything apart from words and periods.
     for token in tokens:
         if token.__contains__("reputaion"):
-            print 'hi'
+            print('hi')
         token = re.sub(r'\.(?=\s)', '', token).rstrip('.')
         if token.__contains__('.'):
             chars = token.split('.')
             for c in chars:
                 if not c.isdigit():
                     if len(c) > 1:
-                        token = re.sub('\.', ' ', token)
+                        token = re.sub(r'\.', ' ', token)
                         break
                 else:
                     break
@@ -114,73 +115,90 @@ def getText(doc):
 
 
 def cleanText(text):
-    text = regex.sub("[^\P{P}\-.,%]+", "", text)
+    text = regex.sub(r"[^\P{P}\-.,%]+", "", text)
     text = text.replace("`", " ")
     text = text.replace("-", " ")
     text = text.replace(",", " ")
-    text = re.sub('\.\.+', ' ', text)
+    text = re.sub(r'\.\.+', ' ', text)
     return text
+
+
+def parseCACM(path):
+    docs = []
+    current = None
+    section = None
+    with open(path, 'r', errors='ignore') as f:
+        for line in f:
+            line = line.rstrip('\n')
+            if line.startswith('.I '):
+                if current is not None:
+                    docs.append(current)
+                current = {'docno': line[3:].strip(), 'text': []}
+                section = None
+            elif line.startswith('.'):
+                section = line[:2]
+                if section not in ('.T', '.W', '.A', '.B', '.N'):
+                    section = None
+            elif section is not None and current is not None:
+                current['text'].append(line)
+    if current is not None:
+        docs.append(current)
+    return docs
 
 
 def getDocLen(text):
     count = 0
     for line in text.splitlines():
-        word = re.sub('\s+', ' ', line).strip().split(' ')
+        word = re.sub(r'\s+', ' ', line).strip().split(' ')
         count += len(word)
     return count
 
 
 
 def getTokens():
-    path = "/Users/Zion/Downloads/AP_DATA/docs/"
+    docs = parseCACM(os.path.join('Files', 'cacm.all'))
     tokens = []
     docInfo = {}
     flag = 1
     countDoc = 0
-    fileIter = 0
-    fileCount = len(os.listdir(path)) - 1
+    fileCount = len(docs)
     invFile = 1
-    for filename in os.listdir(path):
-        fileIter += 1
-        print 'Processing ' + str(fileIter) + ' out of ' + str(fileCount) + ' docs: ' + filename
-        # if (filename == 'ap890608'):
-        if (filename != 'readme'):
-            file = open(path + filename)
-            docs = cleanUpDocs(file)
-            for doc in docs:
-                countDoc += 1
-                text = getText(doc)
-                docNo = doc.find('DOCNO').get_text().strip()
-                docLen = getDocLen(text)
-                docInfo[docNo] = docLen
-                posTokens = tokenizer(text)
-                for token in posTokens:
-                    token.append(docNo)
-                tokens += posTokens
-                if countDoc == 1000:
-                    countDoc = 0
-                    invFile = indexer(tokens, flag, invFile)
-                    tokens = []
-                    flag = 0
+    for fileIter, doc in enumerate(docs, start=1):
+        docNo = doc['docno']
+        print('Processing ' + str(fileIter) + ' out of ' + str(fileCount) + ' docs: ' + docNo)
+        countDoc += 1
+        text = cleanText(' '.join(doc['text']))
+        docLen = getDocLen(text)
+        docInfo[docNo] = docLen
+        posTokens = tokenizer(text)
+        for token in posTokens:
+            token.append(docNo)
+        tokens += posTokens
+        if countDoc == 1000:
+            countDoc = 0
+            invFile = indexer(tokens, flag, invFile)
+            tokens = []
+            flag = 0
 
-    if countDoc < 1000:
+    if countDoc < 1000 and tokens:
         invFile = indexer(tokens, flag, invFile)
 
     #Resolve: Writing termMap and docMap in txt file
-    pickler('Files/Unstemmed/Pickles/termMap.p', catalog.termMap)
+    pickler(os.path.join(BASE_PATH, 'Pickles', 'termMap.p'), catalog.termMap)
     writeHashMap(catalog.termMap, 'termMap.txt')
     
-    pickler('Files/Unstemmed/Pickles/docMap.p', docMap)
+    pickler(os.path.join(BASE_PATH, 'Pickles', 'docMap.p'), docMap)
     writeHashMap(docMap, 'docMap.txt')
     
-    pickler('Files/Unstemmed/Pickles/docInfo.p', docInfo)
+    pickler(os.path.join(BASE_PATH, 'Pickles', 'docInfo.p'), docInfo)
 
 
 def writeHashMap(hashMap, fileName):
-    mapFile = open('Files/Unstemmed/Maps/%s' % (fileName), 'a+')
-    for key, value in hashMap.items():
-        mapFile.write(str(key) + ',' + str(value) + '\n')
-    mapFile.close()
+    outPath = os.path.join(BASE_PATH, 'Maps', fileName)
+    os.makedirs(os.path.dirname(outPath), exist_ok=True)
+    with open(outPath, 'a+') as mapFile:
+        for key, value in hashMap.items():
+            mapFile.write(str(key) + ',' + str(value) + '\n')
     
 def pickler(path, ds):
     f = open(path, 'wb')
@@ -255,7 +273,7 @@ def loadCatalog(termDict, fileName, invFileNo, catalogFile = None):
         if(catalogFile != None):
             catalogFile.write(str(termid) + ',' +str(offset)+','+str(length) +'\n')
         else: 
-            tempCatalogFile = open('Files/Unstemmed/catalogFile%d.txt' % (invFileNo), 'a+')
+            tempCatalogFile = open(os.path.join(BASE_PATH, 'catalogFile%d.txt' % (invFileNo)), 'a+')
             tempCatalogFile.write(str(termid) + ',' +str(offset)+','+str(length) +'\n')
             tempCatalogFile.close()
         invFile.write(writeStr)
@@ -283,7 +301,7 @@ def loadInvList(offset, length, invFile, term, docMap = None):
 
 def mergeInvFiles():
     termDict = OrderedDict()
-    catalogFile = open('Files/Unstemmed/catalogFile.txt', 'a+')
+    catalogFile = open(os.path.join(BASE_PATH, 'catalogFile.txt'), 'a+')
     for term in catalog.terms:
         for file in catalog.terms[term]:
             invFile = open(file)
@@ -300,10 +318,10 @@ def mergeInvFiles():
                         termDict[term][docId] = TermVector(invList[term][docId].tf, invList[term][docId].pos)
         termDict[term] = OrderedDict(sorted(termDict[term].items(), key = lambda x: x[1].tf, reverse = True)) # Resolve: Sort by TF descending
         if len(termDict) == 1000:
-            loadCatalog(termDict, "Files/Unstemmed/invertedFile", 0, catalogFile)
+            loadCatalog(termDict, os.path.join(BASE_PATH, 'invertedFile'), 0, catalogFile)
             termDict ={}
     if len(termDict) > 0:
-        loadCatalog(termDict, "Files/Unstemmed/invertedFile", 0, catalogFile)
+        loadCatalog(termDict, os.path.join(BASE_PATH, 'invertedFile'), 0, catalogFile)
 
     catalogFile.close()
 
@@ -311,13 +329,13 @@ def indexer(tokens, flag, invFile):
     docID = tokens[0][2]
 
     termDict = constructDict(tokens, docID)
-    invFile = loadCatalog(termDict, "Files/Unstemmed/invertedFile", invFile)
+    invFile = loadCatalog(termDict, os.path.join(BASE_PATH, 'invertedFile'), invFile)
 
     return invFile
 
 docMap = {}
 catalog = Catalog()
-with open("/Users/Zion/Downloads/AP_DATA/stoplist.txt") as sfile:
+with open("Files/common_words") as sfile:
     stopWords = sfile.readlines()
 stopWords = set(map(str.strip, stopWords))
 
