@@ -1,4 +1,4 @@
-# ISR Group Project — Information Storage and Retrieval
+# ISR Group Project Information Storage and Retrieval
 
 A comprehensive collection of information retrieval (IR) coursework covering the full spectrum of modern IR techniques: from classical retrieval models and custom indexing to link analysis, learning-to-rank, spam classification, and unsupervised document clustering. All modules are implemented in Python and evaluated against standard TREC benchmark datasets.
 
